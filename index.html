@@ -4,8 +4,11 @@
 button{background:#1B5E3B;color:#fff;border:0}button.g{background:#8B5E3C;width:auto;padding:8px 12px}.tabs{display:flex;gap:4px}.tabs button{background:#ddd;color:#222;padding:9px 4px;font-size:13px}.tabs button.on{background:#1B5E3B;color:#fff}
 label{font-size:13px;color:#555}.r{background:#fff;border-radius:8px;padding:8px;margin:6px 0;font-size:13px}.p{border-left:4px solid orange}.err{color:#b00}small{color:#555}</style></head><body><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
 <script>
-const SUPABASE_URL='https://pplaamgkvpshemkmyhib.supabase.co',SUPABASE_KEY='sb_publishable_4J0hgubk9fdEAzlUWgtuDw_UgLReuNR';
+const config=window.CASSAGRI_CONFIG;
+if(!config){document.getElementById('app').textContent='Configuration missing. Run npm run build before serving this app.';throw new Error('Missing generated config.js')}
+const SUPABASE_URL=config.supabaseUrl,SUPABASE_KEY=config.supabaseKey;
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const F={planting:[['area_ha','Area planted (ha)','number'],['variety','Variety','text'],['casuals','Casuals deployed/day','number'],['completion_date','Completion date','date'],['germination_pct','Germination %','number']],
 water:[['mm_applied','Water applied (mm)','number']],weeding:[['casuals','Casuals deployed','number'],['completion_date','Completion date','date']],fertiliser:[['type','Fertiliser type','text'],['amount','Amount (kg)','number']]};
