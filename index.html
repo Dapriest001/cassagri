@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1B5E3B"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png"><title>CassAgri Field Log</title>
+<style>body{margin:0;font-family:system-ui,sans-serif;background:#F7F5ED;color:#222}header{background:#1B5E3B;color:#fff;padding:12px;display:flex;gap:10px;align-items:center}header b{flex:1}
+.box{max-width:560px;margin:0 auto;padding:14px}input,select,button{width:100%;box-sizing:border-box;padding:11px;margin:5px 0;font-size:16px;border:1px solid #bbb;border-radius:8px}
+button{background:#1B5E3B;color:#fff;border:0}button.g{background:#8B5E3C;width:auto;padding:8px 12px}.tabs{display:flex;gap:4px}.tabs button{background:#ddd;color:#222;padding:9px 4px;font-size:13px}.tabs button.on{background:#1B5E3B;color:#fff}
+label{font-size:13px;color:#555}.r{background:#fff;border-radius:8px;padding:8px;margin:6px 0;font-size:13px}.p{border-left:4px solid orange}.err{color:#b00}small{color:#555}</style></head><body><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL='https://pplaamgkvpshemkmyhib.supabase.co',SUPABASE_KEY='sb_publishable_4J0hgubk9fdEAzlUWgtuDw_UgLReuNR';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const F={planting:[['area_ha','Area planted (ha)','number'],['variety','Variety','text'],['casuals','Casuals deployed/day','number'],['completion_date','Completion date','date'],['germination_pct','Germination %','number']],
+water:[['mm_applied','Water applied (mm)','number']],weeding:[['casuals','Casuals deployed','number'],['completion_date','Completion date','date']],fertiliser:[['type','Fertiliser type','text'],['amount','Amount (kg)','number']]};
+const SITES=[1,2,3,4,5,6].map(n=>'Pivot '+n).concat('Non-pivot block');
+const S={sel:new Set(),user:null,admin:false,tab:'planting',gps:null},$=id=>document.getElementById(id);
+const jg=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch{return d}},js=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const show=h=>$('app').innerHTML=h;
+function loginView(m=''){show(`<div class=box><h2>CassAgri Field Log</h2><input id=em type=email placeholder=Email><input id=pw type=password placeholder=Password><button onclick=login()>Sign in</button><p class=err>${m}</p></div>`)}
+async function login(){if(!navigator.onLine)return loginView('Go online for your first sign-in.');const{error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});if(error)return loginView(error.message);boot()}
+async function boot(){let u=null;try{u=(await sb.auth.getSession()).data.session?.user}catch{}if(!u)u=jg('u',null);if(!u)return loginView();
+S.user={id:u.id,email:u.email};js('u',S.user);S.admin=jg('adm',false);
+if(navigator.onLine){try{const{data}=await sb.from('admins').select('email').maybeSingle();S.admin=!!data;js('adm',S.admin)}catch{}}
+main();sync()}
+function main(){show(`<header><b>CassAgri</b><span id=st></span><button class=g onclick=out()>Sign out</button></header><div class=box><small>${S.user.email}${S.admin?' · ADMIN (all records)':''}</small><div id=err class=err></div><div class=tabs>${Object.keys(F).map(t=>`<button id=t_${t} onclick="tab('${t}')">${t}</button>`).join('')}</div><div id=form></div>${S.admin?'<button class=g onclick="csv()">Export all</button> <button class=g onclick="csv(1)">Export selected (<span id=sn>0</span>)</button>':''}<h3>Records</h3><div id=list></div></div>`);tab(S.tab);status();lst()}
+function tab(t){S.tab=t;Object.keys(F).forEach(k=>$('t_'+k).className=k==t?'on':'');
+$('form').innerHTML=`<label>Date</label><input id=dt type=date value="${new Date().toISOString().slice(0,10)}"><label>Site</label><select id=site>${SITES.map(s=>`<option>${s}</option>`).join('')}</select>${F[t].map(([k,l,ty])=>`<label>${l}</label><input id=f_${k} type=${ty} ${ty=='number'?'step=any inputmode=decimal':''}>`).join('')}<small id=gps onclick="getGps()" style="cursor:pointer;display:block"></small><button onclick=save()>Save record</button><small id=msg></small>`;getGps()}
+function gpsMsg(t){if($('gps'))$('gps').textContent=t}
+const GPS_TARGET=5;
+function getGps(cb,quick){let d=0;const fin=()=>{if(!d){d=1;cb&&cb()}};
+const ok=q=>{const a=Math.round(q.coords.accuracy);if(!S.gps||a<=S.gps.acc||Date.now()-S.gps.t>60000)S.gps={lat:q.coords.latitude,lng:q.coords.longitude,acc:a,t:Date.now()};
+const g=S.gps;gpsMsg('GPS: '+g.lat.toFixed(5)+', '+g.lng.toFixed(5)+' (\u00B1'+g.acc+' m)'+(g.acc<=GPS_TARGET?' \u2713':' - improving, stay still or move to open sky'));
+if(g.acc<=GPS_TARGET){if(S.w!=null){navigator.geolocation.clearWatch(S.w);S.w=null}fin()}};
+const bad=e=>{const r=e&&e.code==1?'location is blocked for this app':e&&e.code==2?'no signal, try outdoors':'timed out';
+if(S.gps&&Date.now()-S.gps.t<1800000)gpsMsg('GPS: using last known position (\u00B1'+S.gps.acc+' m; '+r+')');else{S.gps=null;gpsMsg('GPS unavailable: '+r+' - tap here to retry')}fin()};
+if(!navigator.geolocation){gpsMsg('GPS not supported on this device');return fin()}
+if(quick){if(S.gps&&Date.now()-S.gps.t<120000)return fin();return navigator.geolocation.getCurrentPosition(q=>{ok(q);fin()},bad,{enableHighAccuracy:true,timeout:6000,maximumAge:0})}
+if(S.w!=null)navigator.geolocation.clearWatch(S.w);
+gpsMsg('GPS: searching for a precise fix (up to a minute)...');
+S.w=navigator.geolocation.watchPosition(ok,e=>{if(e.code==1){navigator.geolocation.clearWatch(S.w);S.w=null;bad(e)}},{enableHighAccuracy:true,timeout:60000,maximumAge:0});
+setTimeout(()=>{if(!S.gps||Date.now()-S.gps.t>1800000)navigator.geolocation.getCurrentPosition(ok,()=>{},{enableHighAccuracy:false,timeout:20000,maximumAge:600000})},20000);
+setTimeout(()=>{if(!S.gps||Date.now()-S.gps.t>1800000)bad({code:3})},60000);
+setTimeout(()=>{if(S.w!=null){navigator.geolocation.clearWatch(S.w);S.w=null}},120000)}
+function save(){const data={};F[S.tab].forEach(([k])=>{const v=$('f_'+k).value;if(v!=='')data[k]=v});if(!Object.keys(data).length){$('msg').textContent=' Enter at least one value first';return}
+getGps(()=>{if(S.gps&&S.gps.acc!=null)data.gps_accuracy_m=S.gps.acc;const r={id:crypto.randomUUID(),user_id:S.user.id,user_email:S.user.email,activity:S.tab,site:$('site').value,rec_date:$('dt').value||null,data,lat:S.gps?.lat??null,lng:S.gps?.lng??null};
+const q=jg('q',[]);q.push(r);js('q',q);F[S.tab].forEach(([k])=>$('f_'+k).value='');$('msg').textContent=' Saved ✓';status();lst();sync()},1)}
+async function sync(){if(!navigator.onLine||!S.user)return;const q=jg('q',[]);
+if(q.length){const{error}=await sb.from('records').upsert(q,{onConflict:'id',ignoreDuplicates:true});S.err=error?error.message:'';if(!error)js('q',[])}
+const{data}=await sb.from('records').select('*').order('created_at',{ascending:false}).limit(1000);if(data)js('c',data);status();lst()}
+function status(){if($('err'))$('err').textContent=S.err?'Sync error: '+S.err:'';if($('st'))$('st').textContent=(navigator.onLine?'Online':'Offline')+(jg('q',[]).length?' · '+jg('q',[]).length+' to sync':'')}
+function lst(){if(!$('list'))return;const q=jg('q',[]),ids=new Set(q.map(r=>r.id)),all=q.map(r=>({...r,_p:1})).concat(jg('c',[]).filter(r=>!ids.has(r.id)));
+$('list').innerHTML=all.slice(0,S.admin?200:30).map(r=>`<div class="r ${r._p?'p':''}">${S.admin&&!r._p?`<input type=checkbox style="width:auto;padding:0;margin:0 8px 0 0" ${S.sel.has(r.id)?'checked':''} onchange="pick('${r.id}',this.checked)">`:''}<b>${r.activity}</b> · ${r.site} · ${r.rec_date||''}${S.admin?' · '+r.user_email:''}${r._p?' · waiting to sync':''}<br>${Object.entries(r.data||{}).map(([k,v])=>k+': '+v).join(', ')}${S.admin&&!r._p?` <button class=g onclick="del('${r.id}')">Delete</button>`:''}</div>`).join('')||'<small>No records yet</small>';if($('sn'))$('sn').textContent=S.sel.size}
+async function del(id){if(!navigator.onLine)return alert('Go online to delete.');if(!confirm('Delete this record permanently?'))return;const{error}=await sb.from('records').delete().eq('id',id);if(error)return alert(error.message);S.sel.delete(id);js('c',jg('c',[]).filter(r=>r.id!==id));lst()}
+function pick(id,c){c?S.sel.add(id):S.sel.delete(id);$('sn').textContent=S.sel.size}
+function csv(sel){const rows=jg('c',[]).filter(r=>!sel||S.sel.has(r.id));if(!rows.length)return alert(sel?'Tick at least one record first.':'No records to export.');const keys=[...new Set(rows.flatMap(r=>Object.keys(r.data||{})))],h=['date','site','activity','user','lat','lng',...keys];
+const e=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const t=[h.join(',')].concat(rows.map(r=>[r.rec_date,r.site,r.activity,r.user_email,r.lat,r.lng,...keys.map(k=>r.data?.[k])].map(e).join(','))).join('\n');
+const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download=sel?'cassagri_selected.csv':'cassagri_records.csv';a.click()}
+async function out(){const n=jg('q',[]).length;if(n&&!confirm(n+' record(s) have not synced and will be LOST if you sign out. Sign out anyway?'))return;js('q',[]);await sb.auth.signOut();['u','adm','c'].forEach(k=>localStorage.removeItem(k));loginView()}
+addEventListener('online',()=>{status();sync()});addEventListener('offline',status);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+boot();
+</script></body></html>
